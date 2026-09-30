@@ -3,11 +3,8 @@ import {
   LogoIcon,
   OverviewIcon,
   ProductsIcon,
-  PurchasesIcon,
-  SuppliersIcon,
   SalesIcon,
   StockIcon,
-  TransfersIcon,
   ReportsIcon,
   SettingsIcon,
   CloseIcon
@@ -22,11 +19,8 @@ export default function Sidebar({
   const navItems = [
     { id: 'Overview', label: 'Overview', icon: OverviewIcon },
     { id: 'Products', label: 'Products', icon: ProductsIcon },
-    { id: 'Purchases', label: 'Purchases', icon: PurchasesIcon },
-    { id: 'Suppliers', label: 'Suppliers', icon: SuppliersIcon },
     { id: 'Sales', label: 'Sales', icon: SalesIcon },
     { id: 'Stock', label: 'Stock', icon: StockIcon, badge: 'Live S(t)' },
-    { id: 'Transfers', label: 'Transfers', icon: TransfersIcon },
     { id: 'Reports', label: 'Reports', icon: ReportsIcon },
     { id: 'Settings', label: 'Settings', icon: SettingsIcon },
   ];

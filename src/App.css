@@ -7,7 +7,8 @@
 .app-layout {
   display: flex;
   width: 100%;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background-color: var(--bg-app);
 }
 
@@ -214,7 +215,10 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  height: 100vh;
+  overflow-y: auto;
   overflow-x: hidden;
+  position: relative;
 }
 
 .navbar-container {
@@ -223,11 +227,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background-color: var(--bg-app);
-  border-bottom: 1px solid transparent;
+  background-color: rgba(244, 246, 250, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-color);
   position: sticky;
   top: 0;
   z-index: 40;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 
 .navbar-left {
