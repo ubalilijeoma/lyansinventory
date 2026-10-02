@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth, ROLES, getRoleDashboardPath } from '../context/AuthContext';
 import {
   MenuIcon,
-  SearchIcon,
   BellIcon,
   UserIcon,
   PlusIcon,
   ArrowDownLeftIcon,
-  ArrowUpRightIcon
 } from './Icons';
 
 export default function Navbar({
@@ -14,10 +14,15 @@ export default function Navbar({
   onOpenMovementModal,
   onSimulatePosSale,
   setMobileOpen,
-  lowStockCount = 28
+  lowStockCount = 28,
+  roleBadge = 'Admin'
 }) {
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+  const { currentUser, logout, switchDemoRole } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -25,6 +30,17 @@ export default function Navbar({
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const handleSwitchRole = (targetRole) => {
+    switchDemoRole(targetRole);
+    setShowProfileMenu(false);
+    navigate(getRoleDashboardPath(targetRole));
+  };
+
+  const handleSignOut = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
     <header className="navbar-container">
@@ -48,6 +64,12 @@ export default function Navbar({
       </div>
 
       <div className="navbar-right">
+        {/* Role Badge Indicator */}
+        <div className="role-navbar-pill" title="Active Role Session">
+          <span className="role-pill-indicator"></span>
+          <span className="role-pill-text">{roleBadge}</span>
+        </div>
+
         {/* Quick Action Button for Movement (Inflow / Outflow) */}
         <button
           type="button"
@@ -75,7 +97,10 @@ export default function Navbar({
           <button
             type="button"
             className="nav-icon-btn"
-            onClick={() => setShowNotifications(!showNotifications)}
+            onClick={() => {
+              setShowNotifications(!showNotifications);
+              setShowProfileMenu(false);
+            }}
             aria-label="View notifications"
           >
             <BellIcon size={20} />
@@ -117,12 +142,68 @@ export default function Navbar({
           )}
         </div>
 
-        {/* User Profile Avatar */}
-        <div className="user-profile-btn" title="Lyans Woman Administrator">
-          <div className="avatar-circle">
-            <UserIcon size={18} />
+        {/* User Profile Avatar & Dropdown */}
+        <div className="nav-action-wrapper">
+          <div
+            className="user-profile-btn"
+            onClick={() => {
+              setShowProfileMenu(!showProfileMenu);
+              setShowNotifications(false);
+            }}
+            title="Account & Role Management"
+          >
+            <div className="avatar-circle">
+              {currentUser?.avatarInitials || <UserIcon size={18} />}
+            </div>
+            <span className="user-name">{currentUser?.name?.split(' ')[0] || 'User'}</span>
           </div>
-          <span className="user-name">Manager</span>
+
+          {showProfileMenu && (
+            <div className="profile-menu-dropdown animate-fade-in">
+              <div className="profile-menu-header">
+                <div className="profile-menu-name">{currentUser?.name}</div>
+                <div className="profile-menu-email">{currentUser?.email}</div>
+                <span className="profile-menu-role">
+                  Role: {currentUser?.role?.replace('_', ' ').toUpperCase()}
+                </span>
+              </div>
+
+              <div className="profile-menu-divider"></div>
+
+              <div className="profile-menu-section-title">Quick Role Testing:</div>
+              <button
+                type="button"
+                className="profile-menu-item"
+                onClick={() => handleSwitchRole(ROLES.SUPER_ADMIN)}
+              >
+                <span>👑 Super Admin Dashboard</span>
+              </button>
+              <button
+                type="button"
+                className="profile-menu-item"
+                onClick={() => handleSwitchRole(ROLES.ADMIN)}
+              >
+                <span>🛡️ Store Admin Dashboard</span>
+              </button>
+              <button
+                type="button"
+                className="profile-menu-item"
+                onClick={() => handleSwitchRole(ROLES.STAFF)}
+              >
+                <span>🏷️ Floor Staff Desk</span>
+              </button>
+
+              <div className="profile-menu-divider"></div>
+
+              <button
+                type="button"
+                className="profile-menu-item sign-out-item"
+                onClick={handleSignOut}
+              >
+                <span>Sign Out</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>

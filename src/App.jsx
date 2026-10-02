@@ -1,13 +1,19 @@
 import React, { useState } from 'react';
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate
+} from 'react-router-dom';
 import './App.css';
-import Sidebar from './components/Sidebar';
-import Navbar from './components/Navbar';
-import OverviewView from './components/OverviewView';
-import ProductsView from './components/ProductsView';
-import PurchasesView from './components/PurchasesView';
-import SalesView from './components/SalesView';
-import StockLedgerView from './components/StockLedgerView';
-import StockFlowModal from './components/StockFlowModal';
+import { AuthProvider, useAuth, ROLES, getRoleDashboardPath } from './context/AuthContext';
+import ProtectedRoute from './components/auth/ProtectedRoute';
+import LoginPage from './pages/LoginPage';
+import ForbiddenPage from './pages/ForbiddenPage';
+import SuperAdminDashboard from './pages/SuperAdminDashboard';
+import AdminDashboard from './pages/AdminDashboard';
+import StaffDashboard from './pages/StaffDashboard';
 
 import {
   INITIAL_KPIS,
@@ -17,19 +23,23 @@ import {
   INITIAL_PRODUCTS
 } from './data/mockData';
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState('Overview');
-  const [mobileOpen, setMobileOpen] = useState(false);
+// Component that dynamically redirects root / to the current user's role dashboard
+function RoleRedirector() {
+  const { currentUser } = useAuth();
+  if (!currentUser) {
+    return <Navigate to="/login" replace />;
+  }
+  return <Navigate to={getRoleDashboardPath(currentUser.role)} replace />;
+}
 
-  // Core state for real-time inventory tracking
+// Inner App containing state management and routing
+function AppContent() {
+  // Shared inventory state across authorized dashboards
   const [kpis, setKpis] = useState(INITIAL_KPIS);
   const [categories, setCategories] = useState(INITIAL_STOCK_STATUS);
   const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
   const [locations, setLocations] = useState(INITIAL_LOCATIONS);
   const [products, setProducts] = useState(INITIAL_PRODUCTS);
-
-  // Modal and feedback toast
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
 
   const showToast = (message) => {
@@ -39,7 +49,7 @@ export default function App() {
     }, 3500);
   };
 
-  // Record Stock Movement (Inflow: Restock, Return, Replace | Outflow: POS, Damaged, Return to Supplier)
+  // Record Stock Movement (Inflow / Outflow)
   const handleStockMovement = ({
     movementType,
     subType,
@@ -95,7 +105,7 @@ export default function App() {
       })
     );
 
-    // Update category meter if matched
+    // Update category meter
     if (targetCategory) {
       setCategories((prev) =>
         prev.map((cat) => {
@@ -116,7 +126,9 @@ export default function App() {
     // 4. Create new transaction log
     const now = new Date();
     const formattedTime = now.toISOString().replace('T', ' ').substring(0, 16);
-    const newTxId = isIncrement ? `IN-${Math.floor(1000 + Math.random() * 9000)}` : `OUT-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newTxId = isIncrement
+      ? `IN-${Math.floor(1000 + Math.random() * 9000)}`
+      : `OUT-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const newTx = {
       id: newTxId,
@@ -135,13 +147,13 @@ export default function App() {
     setTransactions((prev) => [newTx, ...prev]);
 
     showToast(
-      `${isIncrement ? 'Inflow' : 'Outflow'} logged: ${quantity} units (${subType}) successfully recorded at time t.`
+      `${isIncrement ? 'Inflow' : 'Outflow'} logged: ${quantity} units (${subType}) recorded at time t.`
     );
   };
 
   // Instant POS Sale Simulation
   const handleSimulatePosSale = () => {
-    const defaultProduct = products[0]; // Silk Evening Gown
+    const defaultProduct = products[0];
     handleStockMovement({
       movementType: 'outflow',
       subType: 'POS Website',
@@ -156,106 +168,87 @@ export default function App() {
   };
 
   return (
-    <div className="app-layout">
-      {/* Sidebar Navigation */}
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        mobileOpen={mobileOpen}
-        setMobileOpen={setMobileOpen}
-      />
+    <>
+      <Routes>
+        {/* Public Authentication Route */}
+        <Route path="/login" element={<LoginPage />} />
 
-      {/* Main Content Area */}
-      <div className="main-wrapper">
-        <Navbar
-          activeTab={activeTab}
-          onOpenMovementModal={() => setIsModalOpen(true)}
-          onSimulatePosSale={handleSimulatePosSale}
-          setMobileOpen={setMobileOpen}
-          lowStockCount={kpis.lowStockItems}
+        {/* 403 Forbidden Access Page */}
+        <Route path="/forbidden" element={<ForbiddenPage />} />
+
+        {/* Super Admin Dashboard (Restricted strictly to super_admin) */}
+        <Route
+          path="/dashboard/super-admin"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN]}>
+              <SuperAdminDashboard
+                kpis={kpis}
+                categories={categories}
+                transactions={transactions}
+                locations={locations}
+                products={products}
+                onStockMovement={handleStockMovement}
+                onSimulatePosSale={handleSimulatePosSale}
+              />
+            </ProtectedRoute>
+          }
         />
 
-        <main className="content-body">
-          {activeTab === 'Overview' && (
-            <OverviewView
-              kpis={kpis}
-              categories={categories}
-              transactions={transactions}
-              locations={locations}
-              onViewAllPurchases={() => setActiveTab('Purchases')}
-            />
-          )}
+        {/* Admin Dashboard (Restricted to admin & super_admin) */}
+        <Route
+          path="/dashboard/admin"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.SUPER_ADMIN]}>
+              <AdminDashboard
+                kpis={kpis}
+                categories={categories}
+                transactions={transactions}
+                locations={locations}
+                products={products}
+                onStockMovement={handleStockMovement}
+                onSimulatePosSale={handleSimulatePosSale}
+              />
+            </ProtectedRoute>
+          }
+        />
 
-          {activeTab === 'Products' && (
-            <ProductsView
-              products={products}
-              onOpenMovementModal={() => setIsModalOpen(true)}
-            />
-          )}
+        {/* Staff Dashboard (Operational desk: staff, admin, super_admin) */}
+        <Route
+          path="/dashboard/staff"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.STAFF, ROLES.ADMIN, ROLES.SUPER_ADMIN]}>
+              <StaffDashboard
+                products={products}
+                locations={locations}
+                transactions={transactions}
+                onStockMovement={handleStockMovement}
+                onSimulatePosSale={handleSimulatePosSale}
+              />
+            </ProtectedRoute>
+          }
+        />
 
-          {activeTab === 'Purchases' && (
-            <PurchasesView
-              transactions={transactions}
-              onOpenMovementModal={() => setIsModalOpen(true)}
-            />
-          )}
+        {/* Root fallback redirects to appropriate dashboard */}
+        <Route path="*" element={<RoleRedirector />} />
+      </Routes>
 
-          {activeTab === 'Sales' && (
-            <SalesView
-              transactions={transactions}
-              onOpenMovementModal={() => setIsModalOpen(true)}
-              onSimulatePosSale={handleSimulatePosSale}
-            />
-          )}
-
-          {activeTab === 'Stock' && (
-            <StockLedgerView
-              kpis={kpis}
-              transactions={transactions}
-              onOpenMovementModal={() => setIsModalOpen(true)}
-            />
-          )}
-
-          {/* Fallback for other sidebar items */}
-          {['Suppliers', 'Transfers', 'Reports', 'Settings'].includes(activeTab) && (
-            <div className="view-page-container animate-fade-in">
-              <div className="card" style={{ padding: '36px', textAlign: 'center' }}>
-                <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>
-                  {activeTab} Module
-                </h3>
-                <p style={{ color: '#64748b', fontSize: '0.9rem', maxWidth: '480px', margin: '0 auto 20px' }}>
-                  Dedicated {activeTab.toLowerCase()} administration console for Lyans Woman. Full telemetry connected to POS & warehouse network.
-                </p>
-                <button
-                  type="button"
-                  className="btn-primary-action"
-                  onClick={() => setActiveTab('Overview')}
-                  style={{ display: 'inline-flex', margin: '0 auto' }}
-                >
-                  Return to Overview Hub
-                </button>
-              </div>
-            </div>
-          )}
-        </main>
-      </div>
-
-      {/* Movement Modal */}
-      <StockFlowModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        products={products}
-        locations={locations}
-        onSubmitMovement={handleStockMovement}
-      />
-
-      {/* Real-time Feedback Toast */}
+      {/* Global Feedback Toast */}
       {toastMsg && (
         <div className="toast-banner animate-fade-in" role="status">
           <span>✓</span>
           <span>{toastMsg}</span>
         </div>
       )}
-    </div>
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
