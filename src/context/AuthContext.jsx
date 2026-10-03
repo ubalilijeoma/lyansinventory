@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { fetchUserProfiles, updateUserProfile, createUserAccount } from '../services/inventoryService';
 
 // System Roles
 export const ROLES = {
@@ -7,70 +8,6 @@ export const ROLES = {
   ADMIN: 'admin',
   STAFF: 'staff',
 };
-
-// Initial Demo Users across the 3 roles
-export const DEMO_ACCOUNTS = [
-  {
-    id: 'usr-001',
-    name: 'Elena Vance (Chief Exec)',
-    email: 'superadmin@lyanswoman.com',
-    role: ROLES.SUPER_ADMIN,
-    title: 'Super Administrator',
-    badgeColor: '#8B5CF6', // purple
-    badgeBg: '#F5F3FF',
-    status: 'Active',
-    assignedLocation: 'All Boutiques & Depots',
-    avatarInitials: 'EV',
-  },
-  {
-    id: 'usr-002',
-    name: 'Marcus Adebayo',
-    email: 'admin@lyanswoman.com',
-    role: ROLES.ADMIN,
-    title: 'Store Operations Admin',
-    badgeColor: '#1E5BF8', // royal blue
-    badgeBg: '#EEF4FF',
-    status: 'Active',
-    assignedLocation: 'Main Store (Flagship)',
-    avatarInitials: 'MA',
-  },
-  {
-    id: 'usr-003',
-    name: 'Sarah Jenkins',
-    email: 'staff@lyanswoman.com',
-    role: ROLES.STAFF,
-    title: 'Floor Inventory Specialist',
-    badgeColor: '#10B981', // green
-    badgeBg: '#ECFDF5',
-    status: 'Active',
-    assignedLocation: 'Main Store Boutique',
-    avatarInitials: 'SJ',
-  },
-  {
-    id: 'usr-004',
-    name: 'David Osei',
-    email: 'david.staff@lyanswoman.com',
-    role: ROLES.STAFF,
-    title: 'Warehouse Stock Associate',
-    badgeColor: '#10B981',
-    badgeBg: '#ECFDF5',
-    status: 'Active',
-    assignedLocation: 'Central Warehouse',
-    avatarInitials: 'DO',
-  },
-  {
-    id: 'usr-005',
-    name: 'Clara Dupont',
-    email: 'clara.admin@lyanswoman.com',
-    role: ROLES.ADMIN,
-    title: 'Branch Inventory Manager',
-    badgeColor: '#1E5BF8',
-    badgeBg: '#EEF4FF',
-    status: 'Deactivated',
-    assignedLocation: 'Branch - North',
-    avatarInitials: 'CD',
-  }
-];
 
 const AuthContext = createContext(null);
 
@@ -87,88 +24,186 @@ export function getRoleDashboardPath(role) {
   }
 }
 
+/**
+ * Resolves a user object from a Supabase auth user and optional profile row.
+ * Guarantees ijeomalilianuba@gmail.com is always Super Admin.
+ */
+function resolveUserObject(authUser, profile = null) {
+  const normalizedEmail = (authUser.email || '').trim().toLowerCase();
+  const isOwnerSuperAdmin = normalizedEmail === 'ijeomalilianuba@gmail.com';
+
+  const resolvedRole = isOwnerSuperAdmin
+    ? ROLES.SUPER_ADMIN
+    : profile?.role || authUser.user_metadata?.role || ROLES.STAFF;
+
+  const fullName = isOwnerSuperAdmin
+    ? 'Ijeoma Lilian Uba'
+    : profile?.full_name || authUser.user_metadata?.full_name || authUser.email.split('@')[0];
+
+  return {
+    id: authUser.id,
+    name: fullName,
+    email: authUser.email,
+    role: resolvedRole,
+    title: isOwnerSuperAdmin
+      ? 'Super Administrator (Executive Owner)'
+      : profile?.title || (resolvedRole === ROLES.SUPER_ADMIN ? 'Super Administrator' : resolvedRole === ROLES.ADMIN ? 'Store Admin' : 'Inventory Staff'),
+    badgeColor: resolvedRole === ROLES.SUPER_ADMIN ? '#8B5CF6' : resolvedRole === ROLES.ADMIN ? '#1E5BF8' : '#10B981',
+    badgeBg: resolvedRole === ROLES.SUPER_ADMIN ? '#F5F3FF' : resolvedRole === ROLES.ADMIN ? '#EEF4FF' : '#ECFDF5',
+    status: profile?.status || 'Active',
+    assignedLocation: profile?.locations?.name || 'Main Store (Flagship)',
+    avatarInitials: isOwnerSuperAdmin ? 'IU' : (profile?.avatar_initials || fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()),
+    isProtectedOwner: isOwnerSuperAdmin,
+  };
+}
+
 export function AuthProvider({ children }) {
-  // Read persisted user or default to Super Admin for immediate rich view
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('lyans_current_user');
-      return saved ? JSON.parse(saved) : DEMO_ACCOUNTS[0]; // default to Super Admin
-    } catch {
-      return DEMO_ACCOUNTS[0];
-    }
-  });
-
-  // User management state for Super Admin & Admin CRUD
-  const [userDirectory, setUserDirectory] = useState(() => {
-    try {
-      const saved = localStorage.getItem('lyans_user_directory');
-      return saved ? JSON.parse(saved) : DEMO_ACCOUNTS;
-    } catch {
-      return DEMO_ACCOUNTS;
-    }
-  });
-
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userDirectory, setUserDirectory] = useState([]);
   const [authError, setAuthError] = useState(null);
+  const [isInitializing, setIsInitializing] = useState(true);
 
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem('lyans_current_user', JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem('lyans_current_user');
+  // Fetch live profile from Supabase and merge with auth user
+  const syncSupabaseUserProfile = useCallback(async (authUser) => {
+    try {
+      let profile = null;
+      if (supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('*, locations:assigned_location_id(name)')
+            .eq('id', authUser.id)
+            .single();
+          if (!error && data) profile = data;
+        } catch (e) {
+          console.warn('[AuthContext] Profile query warning:', e.message);
+        }
+      }
+
+      const userObj = resolveUserObject(authUser, profile);
+      setCurrentUser(userObj);
+      return userObj;
+    } catch (err) {
+      console.error('[AuthContext] syncSupabaseUserProfile error:', err);
+      return null;
     }
-  }, [currentUser]);
+  }, []);
 
+  // Load user directory from Supabase profiles
+  const refreshUserDirectory = useCallback(async () => {
+    try {
+      const result = await fetchUserProfiles();
+      if (result.data && result.data.length > 0) {
+        setUserDirectory(result.data);
+      }
+    } catch (err) {
+      console.warn('[AuthContext] User directory refresh error:', err.message);
+    }
+  }, []);
+
+  // Listen to Supabase Auth state changes on mount
   useEffect(() => {
-    localStorage.setItem('lyans_user_directory', JSON.stringify(userDirectory));
-  }, [userDirectory]);
+    let subscription = null;
 
-  // Login handler with role identification
+    async function initSupabaseAuth() {
+      if (!supabase) {
+        setIsInitializing(false);
+        return;
+      }
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await syncSupabaseUserProfile(session.user);
+          // Load user directory after confirming auth
+          await refreshUserDirectory();
+        }
+      } catch (err) {
+        console.warn('[AuthContext] Session retrieval error:', err.message);
+      } finally {
+        setIsInitializing(false);
+      }
+
+      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+          await syncSupabaseUserProfile(session.user);
+          await refreshUserDirectory();
+        } else if (event === 'SIGNED_OUT') {
+          setCurrentUser(null);
+          setUserDirectory([]);
+        }
+      });
+
+      subscription = data?.subscription;
+    }
+
+    initSupabaseAuth();
+
+    return () => {
+      if (subscription) subscription.unsubscribe();
+    };
+  }, [syncSupabaseUserProfile, refreshUserDirectory]);
+
+  // Secured Login Handler: Requires valid email and password via Supabase Auth
   const login = async (email, password) => {
     setAuthError(null);
+    const normalizedEmail = (email || '').trim().toLowerCase();
 
-    // 1. Try Supabase Auth if online/configured
-    if (supabase) {
-      try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (!error && data?.user) {
-          const userMetaRole = data.user.user_metadata?.role || ROLES.STAFF;
-          const matched = userDirectory.find((u) => u.email.toLowerCase() === email.toLowerCase()) || {
-            id: data.user.id,
-            name: data.user.email.split('@')[0],
-            email: data.user.email,
-            role: userMetaRole,
-            title: userMetaRole.toUpperCase(),
-            status: 'Active',
-            assignedLocation: 'Main Store',
-            avatarInitials: data.user.email.substring(0, 2).toUpperCase(),
-          };
-          setCurrentUser(matched);
-          return { success: true, user: matched };
-        }
-      } catch {
-        // Fall back to local directory authentication
+    if (!normalizedEmail) {
+      const err = 'Work email address is required.';
+      setAuthError(err);
+      return { success: false, error: err };
+    }
+
+    if (!password) {
+      const err = 'Password is required to authenticate.';
+      setAuthError(err);
+      return { success: false, error: err };
+    }
+
+    if (!supabase) {
+      const err = 'Supabase client is not configured. Check your environment variables.';
+      setAuthError(err);
+      return { success: false, error: err };
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      });
+
+      if (error) {
+        const errMsg = error.message === 'Invalid login credentials'
+          ? 'Invalid email or password. Please check your credentials and try again.'
+          : error.message;
+        setAuthError(errMsg);
+        return { success: false, error: errMsg };
       }
+
+      if (data?.user) {
+        const userObj = await syncSupabaseUserProfile(data.user);
+
+        // Check if user account is deactivated
+        if (userObj?.status === 'Deactivated') {
+          await supabase.auth.signOut();
+          const err = 'Your account has been deactivated by an administrator. Contact your Super Admin.';
+          setAuthError(err);
+          setCurrentUser(null);
+          return { success: false, error: err };
+        }
+
+        return { success: true, user: userObj };
+      }
+
+      const err = 'Authentication succeeded but no user data was returned.';
+      setAuthError(err);
+      return { success: false, error: err };
+    } catch (err) {
+      const errMsg = `Authentication error: ${err.message}`;
+      setAuthError(errMsg);
+      return { success: false, error: errMsg };
     }
-
-    // 2. Local directory matching for immediate testing and resilience
-    const normalizedEmail = email.trim().toLowerCase();
-    const foundUser = userDirectory.find((u) => u.email.toLowerCase() === normalizedEmail);
-
-    if (!foundUser) {
-      setAuthError('No active account found with that email address.');
-      return { success: false, error: 'User not found.' };
-    }
-
-    if (foundUser.status === 'Deactivated') {
-      setAuthError('Your account has been deactivated by an administrator.');
-      return { success: false, error: 'Account deactivated.' };
-    }
-
-    setCurrentUser(foundUser);
-    return { success: true, user: foundUser };
   };
 
   const logout = async () => {
@@ -180,21 +215,75 @@ export function AuthProvider({ children }) {
       }
     }
     setCurrentUser(null);
+    setUserDirectory([]);
   };
 
-  // Immediate role switcher for easy multi-role verification
-  const switchDemoRole = (role) => {
-    const targetUser = userDirectory.find((u) => u.role === role && u.status === 'Active');
-    if (targetUser) {
-      setCurrentUser(targetUser);
-      return targetUser;
+  // Sign up handler with automatic role assignment
+  const signUp = async (email, password, fullName = '') => {
+    setAuthError(null);
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    const isOwner = normalizedEmail === 'ijeomalilianuba@gmail.com';
+    const role = isOwner ? ROLES.SUPER_ADMIN : ROLES.STAFF;
+
+    if (!normalizedEmail || !password) {
+      const err = 'Email and password are both required for account registration.';
+      setAuthError(err);
+      return { success: false, error: err };
     }
-    return null;
+
+    if (password.length < 6) {
+      const err = 'Password must be at least 6 characters long.';
+      setAuthError(err);
+      return { success: false, error: err };
+    }
+
+    if (!supabase) {
+      const err = 'Supabase client is not configured.';
+      setAuthError(err);
+      return { success: false, error: err };
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password,
+        options: {
+          data: {
+            full_name: fullName || (isOwner ? 'Ijeoma Lilian Uba' : normalizedEmail.split('@')[0]),
+            role,
+          },
+        },
+      });
+
+      if (error) {
+        setAuthError(error.message);
+        return { success: false, error: error.message };
+      }
+
+      if (data?.user) {
+        if (data.session) {
+          const userObj = await syncSupabaseUserProfile(data.user);
+          return { success: true, user: userObj };
+        } else {
+          return {
+            success: true,
+            requiresVerification: true,
+            message: 'Account created! Check your email for the confirmation link to activate.',
+          };
+        }
+      }
+      return { success: true };
+    } catch (err) {
+      setAuthError(err.message);
+      return { success: false, error: err.message };
+    }
   };
 
-  // User Management Actions (Enforces RBAC)
-  const createUser = (newUserData, actorRole) => {
-    // Admin can only create Staff
+  // ========================================================================
+  // User Management CRUD (Supabase-backed with RBAC enforcement)
+  // ========================================================================
+
+  const createUser = async (newUserData, actorRole) => {
     if (actorRole === ROLES.ADMIN && newUserData.role !== ROLES.STAFF) {
       throw new Error('Admins are only permitted to create Staff accounts.');
     }
@@ -202,70 +291,93 @@ export function AuthProvider({ children }) {
       throw new Error('Staff are not permitted to manage user accounts.');
     }
 
-    const newUser = {
-      id: `usr-${Date.now().toString().slice(-4)}`,
-      ...newUserData,
-      status: 'Active',
-      avatarInitials: newUserData.name
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .substring(0, 2)
-        .toUpperCase(),
-    };
+    try {
+      // Create auth user in Supabase (triggers handle_new_user which creates profile)
+      const authResult = await createUserAccount(
+        newUserData.email,
+        newUserData.password || 'LyansStaff2026!',
+        {
+          fullName: newUserData.name,
+          role: newUserData.role,
+          title: newUserData.title,
+        }
+      );
 
-    setUserDirectory((prev) => [newUser, ...prev]);
-    return newUser;
+      // Refresh directory to pick up the new profile
+      await refreshUserDirectory();
+      return authResult;
+    } catch (err) {
+      // If Supabase user creation fails, throw the error
+      throw new Error(`Account creation failed: ${err.message}`);
+    }
   };
 
-  const updateUser = (userId, updates, actorRole) => {
+  const updateUser = async (userId, updates, actorRole) => {
     const target = userDirectory.find((u) => u.id === userId);
     if (!target) throw new Error('User not found.');
 
-    // Admin cannot modify Super Admin
+    if (target.email?.toLowerCase() === 'ijeomalilianuba@gmail.com' || target.isProtectedOwner) {
+      if (updates.role && updates.role !== ROLES.SUPER_ADMIN) {
+        throw new Error('Forbidden: Cannot demote the Primary Super Admin.');
+      }
+      if (updates.status && updates.status !== 'Active') {
+        throw new Error('Forbidden: Cannot deactivate the Primary Super Admin.');
+      }
+    }
+
     if (actorRole === ROLES.ADMIN && target.role === ROLES.SUPER_ADMIN) {
       throw new Error('Forbidden: Admins have no authority to modify a Super Admin.');
     }
-    // Staff cannot modify any user
     if (actorRole === ROLES.STAFF) {
       throw new Error('Forbidden: Staff cannot modify accounts.');
     }
 
-    setUserDirectory((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, ...updates } : u))
-    );
-
-    // If current logged in user was updated, sync
-    if (currentUser?.id === userId) {
-      setCurrentUser((prev) => ({ ...prev, ...updates }));
+    try {
+      await updateUserProfile(userId, updates);
+      // Optimistic local update
+      setUserDirectory((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, ...updates } : u))
+      );
+      // Update currentUser if modifying self
+      if (currentUser?.id === userId) {
+        setCurrentUser((prev) => ({ ...prev, ...updates }));
+      }
+    } catch (err) {
+      throw new Error(`Profile update failed: ${err.message}`);
     }
   };
 
-  const deleteUser = (userId, actorRole) => {
+  const deleteUser = async (userId, actorRole) => {
     const target = userDirectory.find((u) => u.id === userId);
     if (!target) throw new Error('User not found.');
 
-    // Cannot delete the primary Super Admin
-    if (target.id === 'usr-001') {
-      throw new Error('Forbidden: The primary Super Admin cannot be deleted.');
+    if (target.email?.toLowerCase() === 'ijeomalilianuba@gmail.com' || target.isProtectedOwner) {
+      throw new Error('Forbidden: Primary Super Admin accounts cannot be deleted.');
     }
-    // Admin cannot delete Super Admin or Admin
     if (actorRole === ROLES.ADMIN && target.role !== ROLES.STAFF) {
       throw new Error('Forbidden: Admins can only delete Staff accounts.');
     }
-    // Staff cannot delete users
     if (actorRole === ROLES.STAFF) {
       throw new Error('Forbidden: Staff cannot delete accounts.');
     }
 
-    setUserDirectory((prev) => prev.filter((u) => u.id !== userId));
+    // For now, deactivate instead of hard-deleting (production best practice)
+    // Hard deletion of auth.users requires service_role key or admin API
+    try {
+      await updateUserProfile(userId, { status: 'Deactivated' });
+      setUserDirectory((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, status: 'Deactivated' } : u))
+      );
+    } catch (err) {
+      throw new Error(`Account deactivation failed: ${err.message}`);
+    }
   };
 
-  const toggleUserStatus = (userId, actorRole) => {
+  const toggleUserStatus = async (userId, actorRole) => {
     const target = userDirectory.find((u) => u.id === userId);
     if (!target) throw new Error('User not found.');
 
-    if (target.id === 'usr-001') {
+    if (target.email?.toLowerCase() === 'ijeomalilianuba@gmail.com' || target.isProtectedOwner) {
       throw new Error('Forbidden: The primary Super Admin cannot be deactivated.');
     }
     if (actorRole === ROLES.ADMIN && target.role === ROLES.SUPER_ADMIN) {
@@ -276,7 +388,7 @@ export function AuthProvider({ children }) {
     }
 
     const nextStatus = target.status === 'Active' ? 'Deactivated' : 'Active';
-    updateUser(userId, { status: nextStatus }, actorRole);
+    await updateUser(userId, { status: nextStatus }, actorRole);
   };
 
   return (
@@ -285,13 +397,15 @@ export function AuthProvider({ children }) {
         currentUser,
         userDirectory,
         authError,
+        isInitializing,
         login,
+        signUp,
         logout,
-        switchDemoRole,
         createUser,
         updateUser,
         deleteUser,
         toggleUserStatus,
+        refreshUserDirectory,
         getRoleDashboardPath,
       }}
     >

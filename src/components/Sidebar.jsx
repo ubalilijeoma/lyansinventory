@@ -23,7 +23,7 @@ export default function Sidebar({
   setMobileOpen,
   role = ROLES.SUPER_ADMIN
 }) {
-  const { currentUser, logout, switchDemoRole } = useAuth();
+  const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
 
   // Role-customized navigation list

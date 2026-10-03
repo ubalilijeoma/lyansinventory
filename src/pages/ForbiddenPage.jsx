@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth, getRoleDashboardPath, ROLES } from '../context/AuthContext';
+import { useAuth, getRoleDashboardPath } from '../context/AuthContext';
 import { AlertTriangleIcon, ArrowRightIcon } from '../components/Icons';
 
 export default function ForbiddenPage({
@@ -9,18 +9,13 @@ export default function ForbiddenPage({
   userRole = '',
 }) {
   const navigate = useNavigate();
-  const { currentUser, logout, switchDemoRole } = useAuth();
+  const { currentUser, logout } = useAuth();
 
   const activeRole = userRole || currentUser?.role || 'Guest';
   const homePath = getRoleDashboardPath(currentUser?.role);
 
   const handleReturnHome = () => {
     navigate(homePath, { replace: true });
-  };
-
-  const handleSwitchAndProceed = (targetRole) => {
-    switchDemoRole(targetRole);
-    navigate(getRoleDashboardPath(targetRole), { replace: true });
   };
 
   return (
@@ -86,34 +81,6 @@ export default function ForbiddenPage({
           >
             Sign Out / Switch Account
           </button>
-        </div>
-
-        {/* Quick Demo Switcher for Evaluation */}
-        <div className="forbidden-demo-helper">
-          <span className="helper-label">Developer Quick-Test Role Switcher:</span>
-          <div className="helper-buttons">
-            <button
-              type="button"
-              className="helper-chip purple"
-              onClick={() => handleSwitchAndProceed(ROLES.SUPER_ADMIN)}
-            >
-              Switch to Super Admin
-            </button>
-            <button
-              type="button"
-              className="helper-chip blue"
-              onClick={() => handleSwitchAndProceed(ROLES.ADMIN)}
-            >
-              Switch to Admin
-            </button>
-            <button
-              type="button"
-              className="helper-chip green"
-              onClick={() => handleSwitchAndProceed(ROLES.STAFF)}
-            >
-              Switch to Staff
-            </button>
-          </div>
         </div>
       </div>
     </div>

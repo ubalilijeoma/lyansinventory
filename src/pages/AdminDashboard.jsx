@@ -8,6 +8,9 @@ import SalesView from '../components/SalesView';
 import StockLedgerView from '../components/StockLedgerView';
 import StockFlowModal from '../components/StockFlowModal';
 import UserManagementView from '../components/admin/UserManagementView';
+import TransfersView from '../components/TransfersView';
+import ReportsView from '../components/ReportsView';
+import SettingsView from '../components/SettingsView';
 import { useAuth, ROLES } from '../context/AuthContext';
 
 export default function AdminDashboard({
@@ -17,7 +20,8 @@ export default function AdminDashboard({
   locations,
   products,
   onStockMovement,
-  onSimulatePosSale
+  onSimulatePosSale,
+  onRefreshData
 }) {
   const [activeTab, setActiveTab] = useState('Overview');
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -81,7 +85,8 @@ export default function AdminDashboard({
             <ProductsView
               products={products}
               onOpenMovementModal={() => setIsModalOpen(true)}
-              canDeleteProducts={false} // Only Super Admin can delete catalog lines
+              canDeleteProducts={false}
+              onProductChanged={onRefreshData}
             />
           )}
 
@@ -89,6 +94,7 @@ export default function AdminDashboard({
             <PurchasesView
               transactions={transactions}
               onOpenMovementModal={() => setIsModalOpen(true)}
+              onRefreshData={onRefreshData}
             />
           )}
 
@@ -97,6 +103,7 @@ export default function AdminDashboard({
               transactions={transactions}
               onOpenMovementModal={() => setIsModalOpen(true)}
               onSimulatePosSale={onSimulatePosSale}
+              onRefreshData={onRefreshData}
             />
           )}
 
@@ -105,6 +112,24 @@ export default function AdminDashboard({
               kpis={kpis}
               transactions={transactions}
               onOpenMovementModal={() => setIsModalOpen(true)}
+              onStockMovement={onStockMovement}
+            />
+          )}
+
+          {activeTab === 'Transfers' && (
+            <TransfersView
+              products={products}
+              locations={locations}
+              onRefreshData={onRefreshData}
+            />
+          )}
+
+          {activeTab === 'Reports' && (
+            <ReportsView
+              products={products}
+              locations={locations}
+              transactions={transactions}
+              kpis={kpis}
             />
           )}
 
@@ -113,38 +138,12 @@ export default function AdminDashboard({
             <UserManagementView currentRole={ROLES.ADMIN} />
           )}
 
-          {['Suppliers', 'Transfers', 'Reports'].includes(activeTab) && (
-            <div className="view-page-container animate-fade-in">
-              <div className="card" style={{ padding: '36px', textAlign: 'center' }}>
-                <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>
-                  {activeTab} Operations
-                </h3>
-                <p style={{ color: '#64748b', fontSize: '0.9rem', maxWidth: '480px', margin: '0 auto 20px' }}>
-                  Store-level inventory movements, branch transfers, and sales reconciliation.
-                </p>
-                <button
-                  type="button"
-                  className="btn-primary-action"
-                  onClick={() => setActiveTab('Overview')}
-                  style={{ display: 'inline-flex', margin: '0 auto' }}
-                >
-                  Return to Overview
-                </button>
-              </div>
-            </div>
-          )}
-
           {activeTab === 'Settings' && (
-            <div className="view-page-container animate-fade-in">
-              <div className="card" style={{ padding: '36px', textAlign: 'center' }}>
-                <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>
-                  Restricted Settings
-                </h3>
-                <p style={{ color: '#64748b', fontSize: '0.9rem', maxWidth: '480px', margin: '0 auto 20px' }}>
-                  Root enterprise configurations and database master credentials are restricted to Super Administrators.
-                </p>
-              </div>
-            </div>
+            <SettingsView
+              locations={locations}
+              categories={categories}
+              onRefreshData={onRefreshData}
+            />
           )}
         </main>
       </div>

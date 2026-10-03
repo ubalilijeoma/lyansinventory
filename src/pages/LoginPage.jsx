@@ -1,55 +1,64 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth, getRoleDashboardPath, DEMO_ACCOUNTS, ROLES } from '../context/AuthContext';
+import { useAuth, getRoleDashboardPath } from '../context/AuthContext';
 import { LogoIcon, ArrowRightIcon } from '../components/Icons';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, authError } = useAuth();
+  const { login, signUp, authError } = useAuth();
 
+  const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('Ijeoma Lilian Uba');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   const redirectAfterLogin = (user) => {
-    // Check if there was an attempted destination
     const destination = location.state?.from?.pathname || getRoleDashboardPath(user.role);
     navigate(destination, { replace: true });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email) {
-      setLocalError('Please enter your email address.');
+    if (!email.trim()) {
+      setLocalError('Please enter your work email address.');
+      return;
+    }
+    if (!password) {
+      setLocalError('Please enter your password.');
       return;
     }
 
     setLoading(true);
     setLocalError('');
+    setSuccessMsg('');
 
-    const result = await login(email, password);
-    setLoading(false);
-
-    if (result.success && result.user) {
-      redirectAfterLogin(result.user);
+    if (isSignUp) {
+      const result = await signUp(email, password, fullName);
+      setLoading(false);
+      if (result.success) {
+        if (result.user) {
+          redirectAfterLogin(result.user);
+        } else {
+          setSuccessMsg(result.message || 'Account registered in Supabase. You can now sign in.');
+          setIsSignUp(false);
+        }
+      } else {
+        setLocalError(result.error || 'Registration failed. Please try again.');
+      }
     } else {
-      setLocalError(result.error || 'Login failed. Please verify credentials.');
-    }
-  };
+      const result = await login(email, password);
+      setLoading(false);
 
-  const handleQuickLogin = async (demoUser) => {
-    setEmail(demoUser.email);
-    setPassword('••••••••');
-    setLoading(true);
-    setLocalError('');
-
-    const result = await login(demoUser.email, 'password123');
-    setLoading(false);
-
-    if (result.success && result.user) {
-      redirectAfterLogin(result.user);
+      if (result.success && result.user) {
+        redirectAfterLogin(result.user);
+      } else {
+        setLocalError(result.error || 'Authentication failed. Please verify your email and password.');
+      }
     }
   };
 
@@ -66,11 +75,15 @@ export default function LoginPage() {
         </div>
 
         <div className="login-title-group">
-          <h2 className="login-heading">Welcome Back</h2>
-          <p className="login-desc">Sign in to your role-authorized workspace</p>
+          <h2 className="login-heading">{isSignUp ? 'Create Cloud Account' : 'Executive Authentication'}</h2>
+          <p className="login-desc">
+            {isSignUp
+              ? 'Register with your email to link your Super Admin credentials'
+              : 'Enter your credentials to access the Lyans Woman inventory console'}
+          </p>
         </div>
 
-        {/* Error Messages */}
+        {/* Error & Success Messages */}
         {(localError || authError) && (
           <div className="login-error-alert" role="alert">
             <span>⚠</span>
@@ -78,30 +91,79 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* Login Form */}
+        {successMsg && (
+          <div
+            className="login-error-alert"
+            style={{
+              backgroundColor: '#ECFDF5',
+              borderColor: '#A7F3D0',
+              color: '#059669',
+            }}
+          >
+            <span>✓</span>
+            <span>{successMsg}</span>
+          </div>
+        )}
+
+        {/* Secured Credential Form */}
         <form onSubmit={handleSubmit} className="login-form">
+          {isSignUp && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="fullName">Full Name</label>
+              <input
+                id="fullName"
+                type="text"
+                className="form-input"
+                placeholder="e.g. Ijeoma Lilian Uba"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                required
+              />
+            </div>
+          )}
+
           <div className="form-group">
-            <label className="form-label" htmlFor="email">Work Email</label>
+            <label className="form-label" htmlFor="email">Work Email Address</label>
             <input
               id="email"
               type="email"
               className="form-input"
-              placeholder="e.g. superadmin@lyanswoman.com"
+              placeholder="e.g. ijeomalilianuba@gmail.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoComplete="username"
               required
             />
           </div>
 
           <div className="form-group">
-            <label className="form-label" htmlFor="password">Password</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <label className="form-label" htmlFor="password" style={{ marginBottom: 0 }}>Password</label>
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                {showPassword ? 'Hide Password' : 'Show Password'}
+              </button>
+            </div>
             <input
               id="password"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               className="form-input"
-              placeholder="••••••••"
+              placeholder="••••••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete={isSignUp ? 'new-password' : 'current-password'}
+              required
             />
           </div>
 
@@ -110,54 +172,40 @@ export default function LoginPage() {
             className="btn-primary-action btn-login-submit"
             disabled={loading}
           >
-            <span>{loading ? 'Authenticating...' : 'Sign In to Dashboard'}</span>
+            <span>{loading ? 'Authenticating...' : isSignUp ? 'Register Account' : 'Sign In to Dashboard'}</span>
             <ArrowRightIcon size={16} />
           </button>
+
+          <div style={{ textAlign: 'center', marginTop: '16px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setIsSignUp(!isSignUp);
+                setLocalError('');
+                setSuccessMsg('');
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#1e5bf8',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textDecoration: 'underline',
+              }}
+            >
+              {isSignUp
+                ? 'Already registered? Sign In'
+                : 'Need to set up a new password in Supabase? Register Account'}
+            </button>
+          </div>
         </form>
 
-        {/* Quick Test Roles Box */}
-        <div className="quick-roles-section">
-          <div className="quick-roles-divider">
-            <span>Or Quick-Test by Role</span>
-          </div>
-
-          <div className="quick-roles-grid">
-            {/* Super Admin */}
-            <button
-              type="button"
-              className="quick-role-card role-super-admin"
-              onClick={() => handleQuickLogin(DEMO_ACCOUNTS[0])}
-            >
-              <div className="role-card-badge purple">Super Admin</div>
-              <div className="role-card-name">Elena Vance</div>
-              <div className="role-card-email">superadmin@lyanswoman.com</div>
-              <span className="role-card-cta">Access Executive Hub →</span>
-            </button>
-
-            {/* Admin */}
-            <button
-              type="button"
-              className="quick-role-card role-admin"
-              onClick={() => handleQuickLogin(DEMO_ACCOUNTS[1])}
-            >
-              <div className="role-card-badge blue">Store Admin</div>
-              <div className="role-card-name">Marcus Adebayo</div>
-              <div className="role-card-email">admin@lyanswoman.com</div>
-              <span className="role-card-cta">Access Store Admin →</span>
-            </button>
-
-            {/* Staff */}
-            <button
-              type="button"
-              className="quick-role-card role-staff"
-              onClick={() => handleQuickLogin(DEMO_ACCOUNTS[2])}
-            >
-              <div className="role-card-badge green">Floor Staff</div>
-              <div className="role-card-name">Sarah Jenkins</div>
-              <div className="role-card-email">staff@lyanswoman.com</div>
-              <span className="role-card-cta">Access Staff Desk →</span>
-            </button>
-          </div>
+        {/* Security Baseline Footer Note */}
+        <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #f1f5f9', textAlign: 'center' }}>
+          <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+            🔒 256-Bit SSL Encrypted · Role-Based Access Governance Active
+          </span>
         </div>
       </div>
     </div>

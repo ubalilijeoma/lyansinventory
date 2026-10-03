@@ -1,11 +1,15 @@
-import React from 'react';
-import { ArrowUpRightIcon, ArrowDownLeftIcon, CheckIcon } from './Icons';
+import React, { useState } from 'react';
+import { ArrowUpRightIcon, ArrowDownLeftIcon, CheckIcon, SearchIcon, PlusIcon } from './Icons';
 
 export default function StockLedgerView({
-  kpis,
-  transactions,
-  onOpenMovementModal
+  kpis = {},
+  transactions = [],
+  onOpenMovementModal,
+  onStockMovement
 }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('All');
+
   const inflowItems = transactions
     .filter((t) => t.type === 'inflow')
     .reduce((acc, c) => acc + (c.itemsQty || 0), 0);
@@ -14,7 +18,17 @@ export default function StockLedgerView({
     .filter((t) => t.type === 'outflow')
     .reduce((acc, c) => acc + (c.itemsQty || 0), 0);
 
-  const initialStockEstimate = kpis.totalProducts - (inflowItems - outflowItems);
+  const initialStockEstimate = (kpis.totalProducts || 0) - (inflowItems - outflowItems);
+
+  const filteredTransactions = transactions.filter((tx) => {
+    const matchesType = typeFilter === 'All' || tx.type === typeFilter;
+    const matchesSearch =
+      (tx.id && tx.id.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (tx.entity && tx.entity.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (tx.flowSubType && tx.flowSubType.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (tx.notes && tx.notes.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesType && matchesSearch;
+  });
 
   return (
     <div className="view-page-container animate-fade-in">
@@ -30,6 +44,7 @@ export default function StockLedgerView({
           className="btn-primary-action"
           onClick={onOpenMovementModal}
         >
+          <PlusIcon size={16} />
           <span>Record New Movement</span>
         </button>
       </div>
@@ -80,7 +95,7 @@ export default function StockLedgerView({
         <div className="equation-strip">
           <div className="eq-element">
             <span className="eq-label">Baseline S(t₀)</span>
-            <span className="eq-val">{initialStockEstimate.toLocaleString()}</span>
+            <span className="eq-val">{Math.max(0, initialStockEstimate).toLocaleString()}</span>
           </div>
           <span className="eq-operator">+</span>
           <div className="eq-element">
@@ -95,16 +110,48 @@ export default function StockLedgerView({
           <span className="eq-operator">=</span>
           <div className="eq-element active-total">
             <span className="eq-label">Current Stock S(t)</span>
-            <span className="eq-val text-blue">{kpis.totalProducts.toLocaleString()}</span>
+            <span className="eq-val text-blue">{(kpis.totalProducts || 0).toLocaleString()}</span>
           </div>
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="data-toolbar">
+        <div className="search-bar-wrapper">
+          <SearchIcon size={18} className="search-icon" />
+          <input
+            type="text"
+            className="search-input"
+            placeholder="Search ledger entries by ref, product, channel..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        <div className="category-filter-chips">
+          {['All', 'inflow', 'outflow'].map((f) => (
+            <button
+              key={f}
+              type="button"
+              className={`filter-chip ${typeFilter === f ? 'active' : ''}`}
+              onClick={() => setTypeFilter(f)}
+            >
+              {f === 'All' ? 'All Movements' : f === 'inflow' ? '↑ Inflows (+)' : '↓ Outflows (-)'}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Chronological Audit Trail */}
       <div className="card data-table-card">
         <div className="card-header">
-          <h3 className="card-title">Continuous Time-Stamp Ledger (t)</h3>
-          <span className="card-badge-info">Immutable Stock Audit</span>
+          <div>
+            <h3 className="card-title">Continuous Time-Stamp Ledger (t)</h3>
+            <span className="card-subtitle" style={{ fontSize: '0.85rem', color: '#64748b' }}>
+              Immutable sequence of stock state transitions
+            </span>
+          </div>
+          <span className="card-badge-info">{filteredTransactions.length} Verified Entries</span>
         </div>
         <div className="table-responsive">
           <table className="data-table">
@@ -114,40 +161,54 @@ export default function StockLedgerView({
                 <th>Transaction Ref</th>
                 <th>Type & Flow Source</th>
                 <th>Delta Impact</th>
-                <th>Current Status</th>
+                <th>Balance Effect</th>
+                <th>Ledger Reconciliation</th>
               </tr>
             </thead>
             <tbody>
-              {transactions.map((tx) => (
-                <tr key={tx.id}>
-                  <td className="text-muted font-mono">{tx.timestamp}</td>
-                  <td className="font-semibold">{tx.id}</td>
-                  <td>
-                    <span className="channel-text">
-                      {tx.entity} · <em>{tx.flowSubType}</em>
-                    </span>
-                  </td>
-                  <td>
-                    {tx.type === 'inflow' ? (
-                      <span className="qty-tag inflow">
-                        +{tx.itemsQty || 1} units
-                      </span>
-                    ) : (
-                      <span className="qty-tag outflow">
-                        -{tx.itemsQty || 1} units
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <span
-                      className="status-pill"
-                      style={{ color: tx.statusColor, backgroundColor: tx.statusBg }}
-                    >
-                      <CheckIcon size={12} /> Reconciled
-                    </span>
+              {filteredTransactions.length === 0 ? (
+                <tr>
+                  <td colSpan="6" style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
+                    No ledger entries found matching criteria.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredTransactions.map((tx) => (
+                  <tr key={tx.id}>
+                    <td className="text-muted font-mono">{tx.timestamp}</td>
+                    <td className="font-semibold font-mono">{tx.id}</td>
+                    <td>
+                      <span className="channel-text">
+                        {tx.entity} · <em>{tx.flowSubType}</em>
+                      </span>
+                    </td>
+                    <td>
+                      {tx.type === 'inflow' ? (
+                        <span className="qty-tag inflow">
+                          +{tx.itemsQty || 1} units
+                        </span>
+                      ) : (
+                        <span className="qty-tag outflow">
+                          -{tx.itemsQty || 1} units
+                        </span>
+                      )}
+                    </td>
+                    <td className="font-mono text-muted" style={{ fontSize: '0.85rem' }}>
+                      {tx.balanceBefore !== undefined && tx.balanceAfter !== undefined
+                        ? `${tx.balanceBefore} ➔ ${tx.balanceAfter}`
+                        : `${tx.itemsQty || 1} units`}
+                    </td>
+                    <td>
+                      <span
+                        className="status-pill"
+                        style={{ color: tx.statusColor || '#10B981', backgroundColor: tx.statusBg || '#ECFDF5' }}
+                      >
+                        <CheckIcon size={12} /> Reconciled
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

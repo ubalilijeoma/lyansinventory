@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth, ROLES } from '../../context/AuthContext';
 import { PlusIcon, CloseIcon, AlertTriangleIcon, CheckIcon } from '../Icons';
+import ConfirmModal from '../ConfirmModal';
 
 export default function UserManagementView({ currentRole }) {
   const {
@@ -10,17 +11,21 @@ export default function UserManagementView({ currentRole }) {
     updateUser,
     deleteUser,
     toggleUserStatus,
+    refreshUserDirectory,
   } = useAuth();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [deletingUser, setDeletingUser] = useState(null);
   const [filterRole, setFilterRole] = useState('ALL');
   const [feedbackMsg, setFeedbackMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form state
   const [formName, setFormName] = useState('');
   const [formEmail, setFormEmail] = useState('');
+  const [formPassword, setFormPassword] = useState('');
   const [formRole, setFormRole] = useState(
     currentRole === ROLES.SUPER_ADMIN ? ROLES.ADMIN : ROLES.STAFF
   );
@@ -30,11 +35,16 @@ export default function UserManagementView({ currentRole }) {
   const isSuperAdmin = currentRole === ROLES.SUPER_ADMIN;
   const isAdmin = currentRole === ROLES.ADMIN;
 
+  // Refresh directory on mount
+  useEffect(() => {
+    refreshUserDirectory();
+  }, [refreshUserDirectory]);
+
   // Filter users visible according to permissions
   const visibleUsers = userDirectory.filter((user) => {
-    // Admin only sees Staff accounts and their own account (Super Admins hidden or read-only)
+    // Admin only sees Staff accounts and their own account (Super Admins hidden)
     if (isAdmin && user.role === ROLES.SUPER_ADMIN) {
-      return false; // Hide Super Admin from Admin view
+      return false;
     }
     if (filterRole === 'ALL') return true;
     return user.role === filterRole;
@@ -43,7 +53,7 @@ export default function UserManagementView({ currentRole }) {
   const showNotification = (msg, isErr = false) => {
     if (isErr) {
       setErrorMsg(msg);
-      setTimeout(() => setErrorMsg(''), 4000);
+      setTimeout(() => setErrorMsg(''), 5000);
     } else {
       setFeedbackMsg(msg);
       setTimeout(() => setFeedbackMsg(''), 3500);
@@ -54,6 +64,7 @@ export default function UserManagementView({ currentRole }) {
     setEditingUser(null);
     setFormName('');
     setFormEmail('');
+    setFormPassword('');
     setFormRole(isSuperAdmin ? ROLES.ADMIN : ROLES.STAFF);
     setFormTitle(isSuperAdmin ? 'Store Operations Admin' : 'Floor Inventory Specialist');
     setFormLocation('Main Store');
@@ -61,7 +72,6 @@ export default function UserManagementView({ currentRole }) {
   };
 
   const handleOpenEditModal = (user) => {
-    // Guard: Admin cannot edit Super Admin
     if (isAdmin && user.role === ROLES.SUPER_ADMIN) {
       showNotification('Unauthorized: Admins have no authority to modify a Super Admin.', true);
       return;
@@ -69,21 +79,23 @@ export default function UserManagementView({ currentRole }) {
     setEditingUser(user);
     setFormName(user.name);
     setFormEmail(user.email);
+    setFormPassword('');
     setFormRole(user.role);
     setFormTitle(user.title || '');
     setFormLocation(user.assignedLocation || 'Main Store');
     setModalOpen(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
+
     try {
       if (editingUser) {
-        updateUser(
+        await updateUser(
           editingUser.id,
           {
             name: formName,
-            email: formEmail,
             role: formRole,
             title: formTitle,
             assignedLocation: formLocation,
@@ -92,10 +104,16 @@ export default function UserManagementView({ currentRole }) {
         );
         showNotification(`User account for ${formName} updated successfully.`);
       } else {
-        createUser(
+        if (!formPassword || formPassword.length < 6) {
+          showNotification('Password must be at least 6 characters.', true);
+          setIsSubmitting(false);
+          return;
+        }
+        await createUser(
           {
             name: formName,
             email: formEmail,
+            password: formPassword,
             role: formRole,
             title: formTitle,
             assignedLocation: formLocation,
@@ -107,23 +125,28 @@ export default function UserManagementView({ currentRole }) {
       setModalOpen(false);
     } catch (err) {
       showNotification(err.message, true);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleDelete = (userId, userName) => {
-    if (window.confirm(`Are you sure you want to permanently delete the account for ${userName}?`)) {
-      try {
-        deleteUser(userId, currentRole);
-        showNotification(`Account for ${userName} deleted.`);
-      } catch (err) {
-        showNotification(err.message, true);
-      }
-    }
-  };
-
-  const handleToggleStatus = (user) => {
+  const handleConfirmDelete = async () => {
+    if (!deletingUser) return;
+    setIsSubmitting(true);
     try {
-      toggleUserStatus(user.id, currentRole);
+      await deleteUser(deletingUser.id, currentRole);
+      showNotification(`Account for ${deletingUser.name} has been deactivated.`);
+      setDeletingUser(null);
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleStatus = async (user) => {
+    try {
+      await toggleUserStatus(user.id, currentRole);
       const nextStatus = user.status === 'Active' ? 'Deactivated' : 'Active';
       showNotification(`Account for ${user.name} is now ${nextStatus}.`);
     } catch (err) {
@@ -221,126 +244,130 @@ export default function UserManagementView({ currentRole }) {
               </tr>
             </thead>
             <tbody>
-              {visibleUsers.map((user) => {
-                const isRootSuperAdmin = user.id === 'usr-001';
-                const isCurrentUser = user.id === currentUser?.id;
-                const isTargetSuperAdmin = user.role === ROLES.SUPER_ADMIN;
+              {visibleUsers.length === 0 ? (
+                <tr>
+                  <td colSpan="6" style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
+                    No user accounts found. Create one to get started.
+                  </td>
+                </tr>
+              ) : (
+                visibleUsers.map((user) => {
+                  const isRootSuperAdmin =
+                    user.email?.toLowerCase() === 'ijeomalilianuba@gmail.com' ||
+                    Boolean(user.isProtectedOwner);
+                  const isCurrentUser = user.id === currentUser?.id;
 
-                return (
-                  <tr key={user.id}>
-                    <td>
-                      <div className="user-table-cell">
-                        <div
-                          className="user-table-avatar"
+                  return (
+                    <tr key={user.id}>
+                      <td>
+                        <div className="user-table-cell">
+                          <div
+                            className="user-table-avatar"
+                            style={{
+                              backgroundColor:
+                                user.role === ROLES.SUPER_ADMIN
+                                  ? '#8B5CF6'
+                                  : user.role === ROLES.ADMIN
+                                  ? '#1E5BF8'
+                                  : '#10B981',
+                            }}
+                          >
+                            {user.avatarInitials || 'U'}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-primary">
+                              {user.name} {isCurrentUser && <span className="text-muted">(You)</span>}
+                            </div>
+                            <div className="text-muted text-xs font-mono">{user.email}</div>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td>
+                        <span
+                          className="role-badge-pill"
                           style={{
                             backgroundColor:
                               user.role === ROLES.SUPER_ADMIN
-                                ? '#8B5CF6'
+                                ? '#F5F3FF'
+                                : user.role === ROLES.ADMIN
+                                ? '#EEF4FF'
+                                : '#ECFDF5',
+                            color:
+                              user.role === ROLES.SUPER_ADMIN
+                                ? '#7C3AED'
                                 : user.role === ROLES.ADMIN
                                 ? '#1E5BF8'
-                                : '#10B981',
+                                : '#059669',
+                            borderColor:
+                              user.role === ROLES.SUPER_ADMIN
+                                ? '#DDD6FE'
+                                : user.role === ROLES.ADMIN
+                                ? '#BFDBFE'
+                                : '#A7F3D0',
                           }}
                         >
-                          {user.avatarInitials || 'U'}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-primary">
-                            {user.name} {isCurrentUser && <span className="text-muted">(You)</span>}
-                          </div>
-                          <div className="text-muted text-xs font-mono">{user.email}</div>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td>
-                      <span
-                        className="role-badge-pill"
-                        style={{
-                          backgroundColor:
-                            user.role === ROLES.SUPER_ADMIN
-                              ? '#F5F3FF'
-                              : user.role === ROLES.ADMIN
-                              ? '#EEF4FF'
-                              : '#ECFDF5',
-                          color:
-                            user.role === ROLES.SUPER_ADMIN
-                              ? '#7C3AED'
-                              : user.role === ROLES.ADMIN
-                              ? '#1E5BF8'
-                              : '#059669',
-                          borderColor:
-                            user.role === ROLES.SUPER_ADMIN
-                              ? '#DDD6FE'
-                              : user.role === ROLES.ADMIN
-                              ? '#BFDBFE'
-                              : '#A7F3D0',
-                        }}
-                      >
-                        {user.role === ROLES.SUPER_ADMIN
-                          ? '👑 Super Admin'
-                          : user.role === ROLES.ADMIN
-                          ? '🛡️ Store Admin'
-                          : '🏷️ Floor Staff'}
-                      </span>
-                    </td>
-
-                    <td className="text-secondary">{user.title}</td>
-                    <td className="text-secondary">{user.assignedLocation}</td>
-
-                    <td>
-                      <span
-                        className={`status-pill ${
-                          user.status === 'Active' ? 'status-good' : 'status-critical'
-                        }`}
-                      >
-                        {user.status === 'Active' ? '● Active' : '○ Deactivated'}
-                      </span>
-                    </td>
-
-                    <td className="text-right">
-                      {isRootSuperAdmin ? (
-                        <span className="badge-protected" title="Root system administrator cannot be modified">
-                          🔒 Root Protected
+                          {user.role === ROLES.SUPER_ADMIN
+                            ? '👑 Super Admin'
+                            : user.role === ROLES.ADMIN
+                            ? '🛡️ Store Admin'
+                            : '🏷️ Floor Staff'}
                         </span>
-                      ) : (
-                        <div className="table-actions-group">
-                          {/* Edit Button */}
-                          <button
-                            type="button"
-                            className="btn-table-action edit"
-                            onClick={() => handleOpenEditModal(user)}
-                            title="Edit user details"
-                          >
-                            Edit
-                          </button>
+                      </td>
 
-                          {/* Deactivate/Activate Toggle */}
-                          <button
-                            type="button"
-                            className={`btn-table-action ${
-                              user.status === 'Active' ? 'deactivate' : 'activate'
-                            }`}
-                            onClick={() => handleToggleStatus(user)}
-                            title={user.status === 'Active' ? 'Deactivate account' : 'Reactivate account'}
-                          >
-                            {user.status === 'Active' ? 'Deactivate' : 'Activate'}
-                          </button>
+                      <td className="text-secondary">{user.title}</td>
+                      <td className="text-secondary">{user.assignedLocation}</td>
 
-                          {/* Delete Button */}
-                          <button
-                            type="button"
-                            className="btn-table-action delete"
-                            onClick={() => handleDelete(user.id, user.name)}
-                            title="Permanently remove user"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+                      <td>
+                        <span
+                          className={`status-pill ${
+                            user.status === 'Active' ? 'status-good' : 'status-critical'
+                          }`}
+                        >
+                          {user.status === 'Active' ? '● Active' : '○ Deactivated'}
+                        </span>
+                      </td>
+
+                      <td className="text-right">
+                        {isRootSuperAdmin ? (
+                          <span className="badge-protected" title="Executive Owner cannot be modified or deleted">
+                            🔒 Executive Protected
+                          </span>
+                        ) : (
+                          <div className="table-actions-group">
+                            <button
+                              type="button"
+                              className="btn-table-action edit"
+                              onClick={() => handleOpenEditModal(user)}
+                              title="Edit user details"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn-table-action ${
+                                user.status === 'Active' ? 'deactivate' : 'activate'
+                              }`}
+                              onClick={() => handleToggleStatus(user)}
+                              title={user.status === 'Active' ? 'Deactivate account' : 'Reactivate account'}
+                            >
+                              {user.status === 'Active' ? 'Deactivate' : 'Activate'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-table-action delete"
+                              onClick={() => setDeletingUser(user)}
+                              title="Deactivate user account"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -356,7 +383,9 @@ export default function UserManagementView({ currentRole }) {
                   {editingUser ? `Edit Account: ${editingUser.name}` : 'Create New Account'}
                 </h3>
                 <p className="modal-subtitle">
-                  Enforces strict role permissions and assigned boutique access
+                  {editingUser
+                    ? 'Update role, title, or location assignment'
+                    : 'Creates a new Supabase Auth account with the assigned role'}
                 </p>
               </div>
               <button
@@ -392,8 +421,34 @@ export default function UserManagementView({ currentRole }) {
                   value={formEmail}
                   onChange={(e) => setFormEmail(e.target.value)}
                   required
+                  disabled={!!editingUser} // Cannot change email after creation
                 />
+                {editingUser && (
+                  <span className="text-xs text-muted" style={{ marginTop: '4px', display: 'block' }}>
+                    Email cannot be changed after account creation.
+                  </span>
+                )}
               </div>
+
+              {/* Password field only for new accounts */}
+              {!editingUser && (
+                <div className="form-group">
+                  <label className="form-label" htmlFor="userPassword">Initial Password</label>
+                  <input
+                    id="userPassword"
+                    type="password"
+                    className="form-input"
+                    placeholder="Minimum 6 characters"
+                    value={formPassword}
+                    onChange={(e) => setFormPassword(e.target.value)}
+                    minLength={6}
+                    required
+                  />
+                  <span className="text-xs text-muted" style={{ marginTop: '4px', display: 'block' }}>
+                    The user will use this password to sign in. They can reset it later.
+                  </span>
+                </div>
+              )}
 
               <div className="form-row-2">
                 <div className="form-group">
@@ -403,7 +458,7 @@ export default function UserManagementView({ currentRole }) {
                     className="form-select"
                     value={formRole}
                     onChange={(e) => setFormRole(e.target.value)}
-                    disabled={isAdmin} // Admin can only create/manage Staff
+                    disabled={isAdmin}
                   >
                     {isSuperAdmin && (
                       <option value={ROLES.ADMIN}>🛡️ Store Admin</option>
@@ -454,17 +509,39 @@ export default function UserManagementView({ currentRole }) {
                   type="button"
                   className="btn-cancel"
                   onClick={() => setModalOpen(false)}
+                  disabled={isSubmitting}
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn-confirm confirm-inflow">
-                  {editingUser ? 'Save Changes' : 'Create Account'}
+                <button
+                  type="submit"
+                  className="btn-confirm confirm-inflow"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting
+                    ? 'Processing...'
+                    : editingUser
+                    ? 'Save Changes'
+                    : 'Create Account'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Account Deactivation Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deletingUser}
+        onClose={() => setDeletingUser(null)}
+        onConfirm={handleConfirmDelete}
+        title="Deactivate User Account"
+        message="Are you sure you want to deactivate this account? The user will immediately be barred from signing into the dashboard and accessing inventory systems."
+        itemDetails={deletingUser ? `${deletingUser.name} (${deletingUser.email}) · Role: ${deletingUser.role}` : null}
+        confirmText="Deactivate Account"
+        cancelText="Keep Account"
+        isLoading={isSubmitting}
+      />
     </div>
   );
 }

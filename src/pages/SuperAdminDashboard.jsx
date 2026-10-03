@@ -8,6 +8,9 @@ import SalesView from '../components/SalesView';
 import StockLedgerView from '../components/StockLedgerView';
 import StockFlowModal from '../components/StockFlowModal';
 import UserManagementView from '../components/admin/UserManagementView';
+import TransfersView from '../components/TransfersView';
+import ReportsView from '../components/ReportsView';
+import SettingsView from '../components/SettingsView';
 import { useAuth, ROLES } from '../context/AuthContext';
 
 export default function SuperAdminDashboard({
@@ -17,7 +20,8 @@ export default function SuperAdminDashboard({
   locations,
   products,
   onStockMovement,
-  onSimulatePosSale
+  onSimulatePosSale,
+  onRefreshData
 }) {
   const [activeTab, setActiveTab] = useState('Overview');
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -83,6 +87,7 @@ export default function SuperAdminDashboard({
               products={products}
               onOpenMovementModal={() => setIsModalOpen(true)}
               canDeleteProducts={true}
+              onProductChanged={onRefreshData}
             />
           )}
 
@@ -90,6 +95,7 @@ export default function SuperAdminDashboard({
             <PurchasesView
               transactions={transactions}
               onOpenMovementModal={() => setIsModalOpen(true)}
+              onRefreshData={onRefreshData}
             />
           )}
 
@@ -98,6 +104,7 @@ export default function SuperAdminDashboard({
               transactions={transactions}
               onOpenMovementModal={() => setIsModalOpen(true)}
               onSimulatePosSale={onSimulatePosSale}
+              onRefreshData={onRefreshData}
             />
           )}
 
@@ -106,6 +113,24 @@ export default function SuperAdminDashboard({
               kpis={kpis}
               transactions={transactions}
               onOpenMovementModal={() => setIsModalOpen(true)}
+              onStockMovement={onStockMovement}
+            />
+          )}
+
+          {activeTab === 'Transfers' && (
+            <TransfersView
+              products={products}
+              locations={locations}
+              onRefreshData={onRefreshData}
+            />
+          )}
+
+          {activeTab === 'Reports' && (
+            <ReportsView
+              products={products}
+              locations={locations}
+              transactions={transactions}
+              kpis={kpis}
             />
           )}
 
@@ -113,25 +138,12 @@ export default function SuperAdminDashboard({
             <UserManagementView currentRole={ROLES.SUPER_ADMIN} />
           )}
 
-          {['Suppliers', 'Transfers', 'Reports', 'Settings'].includes(activeTab) && (
-            <div className="view-page-container animate-fade-in">
-              <div className="card" style={{ padding: '36px', textAlign: 'center' }}>
-                <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>
-                  {activeTab} Module (Super Admin Access)
-                </h3>
-                <p style={{ color: '#64748b', fontSize: '0.9rem', maxWidth: '480px', margin: '0 auto 20px' }}>
-                  Full executive control over {activeTab.toLowerCase()}, security credentials, and multi-node warehouse policies.
-                </p>
-                <button
-                  type="button"
-                  className="btn-primary-action"
-                  onClick={() => setActiveTab('Overview')}
-                  style={{ display: 'inline-flex', margin: '0 auto' }}
-                >
-                  Return to Executive Overview
-                </button>
-              </div>
-            </div>
+          {activeTab === 'Settings' && (
+            <SettingsView
+              locations={locations}
+              categories={categories}
+              onRefreshData={onRefreshData}
+            />
           )}
         </main>
       </div>

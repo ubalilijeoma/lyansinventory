@@ -78,25 +78,6 @@ export default function StaffDashboard({
       <div className="staff-access-banner">
         <div className="staff-banner-content">
           <span>🔒 <strong>Role Privileges: Operational Access Only.</strong> You can view active stock and record assigned inflows/outflows. User administration and system configurations are restricted.</span>
-          <div className="staff-test-prohibited-links">
-            <span className="test-label">Test 403 Forbidden Guard:</span>
-            <button
-              type="button"
-              className="btn-prohibited-test"
-              onClick={() => navigate('/dashboard/super-admin')}
-              title="Attempt accessing Super Admin console as Staff"
-            >
-              Try Super Admin (403 Test)
-            </button>
-            <button
-              type="button"
-              className="btn-prohibited-test"
-              onClick={() => navigate('/dashboard/admin')}
-              title="Attempt accessing Store Admin console as Staff"
-            >
-              Try Store Admin (403 Test)
-            </button>
-          </div>
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth, ROLES, getRoleDashboardPath } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import {
   MenuIcon,
   BellIcon,
@@ -21,7 +21,7 @@ export default function Navbar({
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
-  const { currentUser, logout, switchDemoRole } = useAuth();
+  const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -30,12 +30,6 @@ export default function Navbar({
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-
-  const handleSwitchRole = (targetRole) => {
-    switchDemoRole(targetRole);
-    setShowProfileMenu(false);
-    navigate(getRoleDashboardPath(targetRole));
-  };
 
   const handleSignOut = () => {
     logout();
@@ -167,31 +161,6 @@ export default function Navbar({
                   Role: {currentUser?.role?.replace('_', ' ').toUpperCase()}
                 </span>
               </div>
-
-              <div className="profile-menu-divider"></div>
-
-              <div className="profile-menu-section-title">Quick Role Testing:</div>
-              <button
-                type="button"
-                className="profile-menu-item"
-                onClick={() => handleSwitchRole(ROLES.SUPER_ADMIN)}
-              >
-                <span>👑 Super Admin Dashboard</span>
-              </button>
-              <button
-                type="button"
-                className="profile-menu-item"
-                onClick={() => handleSwitchRole(ROLES.ADMIN)}
-              >
-                <span>🛡️ Store Admin Dashboard</span>
-              </button>
-              <button
-                type="button"
-                className="profile-menu-item"
-                onClick={() => handleSwitchRole(ROLES.STAFF)}
-              >
-                <span>🏷️ Floor Staff Desk</span>
-              </button>
 
               <div className="profile-menu-divider"></div>
 
